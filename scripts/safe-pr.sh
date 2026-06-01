@@ -88,8 +88,8 @@ else
     'AKIA[0-9A-Z]{16}' \
     '-----BEGIN [A-Z ]*PRIVATE KEY-----'
   do
-    if git grep -I -n -E "$pattern" --cached -- . ':(exclude)scripts/safe-pr.sh' >/dev/null; then
-      git grep -I -n -E "$pattern" --cached -- . ':(exclude)scripts/safe-pr.sh' >&2
+    if git grep --cached -I -n -E -e "$pattern" -- . ':(exclude)scripts/safe-pr.sh' >/dev/null; then
+      git grep --cached -I -n -E -e "$pattern" -- . ':(exclude)scripts/safe-pr.sh' >&2
       found_secret=1
     fi
   done
