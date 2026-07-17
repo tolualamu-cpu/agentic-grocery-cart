@@ -182,13 +182,6 @@ function buildCartPlanOptions(
 
   const planRecipes: PlanRecipe[] = [
     {
-      id: "recommended",
-      title: "Recommended",
-      badge: toPlanBadge(preferences.optimizationGoal),
-      strategy: preferences.optimizationGoal,
-      selector: (plans) => plans[0],
-    },
-    {
       id: "cheapest-one-store",
       title: "Cheapest one-store",
       badge: "Simple",
@@ -240,8 +233,16 @@ function buildCartPlanOptions(
 
   const cheapestPlan =
     sortPlans(Array.from(plansByStrategy.values()).flat(), "total")[0] ?? emptyPlan();
+  const recommendedPlan = plansByStrategy.get(preferences.optimizationGoal)?.[0];
+  const recommendedRecipeId =
+    planRecipes.find((recipe) => {
+      const strategyPlans = plansByStrategy.get(recipe.strategy) ?? [];
+      const plan = recipe.selector(strategyPlans);
 
-  return planRecipes
+      return Boolean(recommendedPlan && plan === recommendedPlan);
+    })?.id ?? planRecipes.find((recipe) => recipe.strategy === preferences.optimizationGoal)?.id;
+
+  const planOptions = planRecipes
     .map((recipe) => {
       const strategyPlans = plansByStrategy.get(recipe.strategy) ?? [];
       const plan = recipe.selector(strategyPlans);
@@ -262,11 +263,17 @@ function buildCartPlanOptions(
         },
         cheapestPlan,
         cheapestPossible,
-        isRecommended: recipe.id === "recommended",
+        isRecommended: recipe.id === recommendedRecipeId,
         unmatchedNeeds,
       });
     })
     .filter((plan): plan is CartPlanOption => Boolean(plan));
+
+  return sortPlanOptions(planOptions);
+}
+
+function sortPlanOptions(planOptions: CartPlanOption[]): CartPlanOption[] {
+  return [...planOptions].sort((a, b) => Number(b.isRecommended) - Number(a.isRecommended));
 }
 
 function sortPlans(plans: CartPlan[], mode: "total" | "fewest_stores"): CartPlan[] {
@@ -275,22 +282,6 @@ function sortPlans(plans: CartPlan[], mode: "total" | "fewest_stores"): CartPlan
   }
 
   return [...plans].sort((a, b) => a.total - b.total || a.stores.length - b.stores.length || a.score - b.score);
-}
-
-function toPlanBadge(strategy: OptimizationGoal): string {
-  if (strategy === "best_value") {
-    return "Recommended value";
-  }
-
-  if (strategy === "fewest_stores") {
-    return "Recommended convenience";
-  }
-
-  if (strategy === "preferred_brands") {
-    return "Recommended brands";
-  }
-
-  return "Recommended price";
 }
 
 function buildBudgetWarnings(plan: CartPlan, preferences: UserPreferences): string[] {

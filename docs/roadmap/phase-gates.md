@@ -41,9 +41,9 @@ This applies to current phases and all future phases added to the roadmap.
 Current immediate gate:
 
 - Phase 2, Phase 2.5, Phase 3A, and Phase 3B have been closed in sequence.
-- complete [Phase 3.5](phase-3-5-closure-checklist.md) before starting OpenAI intent interpretation, embeddings, API connections, retailer connectors, or personalization work
-- continue one roadmap phase at a time after explicit user review
-- do not add live model/API work until Phase 3.5 is reviewed
+- [Phase 3.5](phase-3-5-closure-checklist.md) passed its full validation gate on July 16, 2026.
+- stop for explicit user review of Phase 3.5 before starting OpenAI intent interpretation, embeddings, API connections, retailer connectors, or personalization work
+- after that review, continue one roadmap phase at a time
 
 ## Regression Rule
 

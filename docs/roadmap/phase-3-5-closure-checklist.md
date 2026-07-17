@@ -1,6 +1,6 @@
 # Phase 3.5 Closure Checklist
 
-Status: in progress.
+Status: complete — validated July 16, 2026.
 
 ## Scope
 
@@ -88,6 +88,13 @@ Protected examples include:
 ```bash
 npm run test:all
 ```
+
+## Closure Evidence
+
+- The protected search evaluation suite contains 130 cases, including all required result classes.
+- The expanded catalog, taxonomy retrievers, product matcher, catalog exports, 10 meal profiles, and 18 Phase 3.5 shopper journeys are covered by automated tests.
+- The complete historical gate passed on July 16, 2026: lint completed with no errors, 457 unit tests passed, 146 end-to-end tests passed, and the production build completed successfully.
+- Phase 4 remains blocked pending the user review required below.
 
 ## Review Gate
 
