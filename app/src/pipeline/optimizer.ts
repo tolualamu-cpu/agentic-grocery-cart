@@ -1,4 +1,4 @@
-import { offers, products, stores } from "@/data/mockCatalog";
+import { offers, products } from "@/data/mockCatalog";
 import type {
   CartItem,
   CartPlanOption,
@@ -15,11 +15,13 @@ import { catalogProductMatcher } from "@/pipeline/productMatcher";
 import { getLineTotal } from "@/pipeline/pricing";
 import { normalizeText } from "@/pipeline/search";
 
-type CandidateGroup = {
+export type OptimizationCandidateGroup = {
   need: GroceryNeed;
   candidates: ProductCandidate[];
   allCandidates: ProductCandidate[];
 };
+
+type CandidateGroup = OptimizationCandidateGroup;
 
 type CartPlan = {
   items: CartItem[];
@@ -98,7 +100,6 @@ export function buildOptimizedCart(
   needs: GroceryNeed[],
   preferences: UserPreferences,
 ): OptimizedCart {
-  const warnings: string[] = [];
   const candidateGroups = needs.map((need) => {
     const allCandidates = catalogProductMatcher.findCandidates(need, preferences);
 
@@ -108,9 +109,28 @@ export function buildOptimizedCart(
       candidates: allCandidates.filter((candidate) => candidate.store.fulfillment.includes(preferences.fulfillmentMode)),
     };
   });
+
+  return buildOptimizedCartFromCandidateGroups(needs, preferences, candidateGroups, "mock");
+}
+
+export function buildOptimizedCartFromCandidates(
+  needs: GroceryNeed[],
+  preferences: UserPreferences,
+  candidateGroups: OptimizationCandidateGroup[],
+): OptimizedCart {
+  return buildOptimizedCartFromCandidateGroups(needs, preferences, candidateGroups, "retailer");
+}
+
+function buildOptimizedCartFromCandidateGroups(
+  needs: GroceryNeed[],
+  preferences: UserPreferences,
+  candidateGroups: CandidateGroup[],
+  catalogSource: "mock" | "retailer",
+): OptimizedCart {
+  const warnings: string[] = [];
   let unmatchedNeeds = candidateGroups
     .filter((group) => group.candidates.length === 0)
-    .map((group) => buildUnmatchedNeed(group.need, preferences, group.allCandidates));
+    .map((group) => buildUnmatchedNeed(group.need, preferences, group.allCandidates, catalogSource));
 
   for (const unmatchedNeed of unmatchedNeeds) {
     warnings.push(`No available product matched ${unmatchedNeed.need.displayName}.`);
@@ -506,8 +526,8 @@ function buildCartPlan(
       alternatives: group.candidates.filter((candidate) => candidate.offer.id !== selected.offer.id).slice(0, 3),
     };
   });
-  const selectedStores = stores.filter((store) =>
-    selectedCandidates.some((candidate) => candidate.store.id === store.id),
+  const selectedStores = Array.from(
+    new Map(selectedCandidates.map((candidate) => [candidate.store.id, candidate.store])).values(),
   );
   const subtotal = sum(items.map((item) => getLineTotal(item.need, item.selected)));
   const fees = sum(selectedStores.map((store) => getFulfillmentFee(store, preferences)));
@@ -600,7 +620,9 @@ function buildExplanations(plan: CartPlan, preferences: UserPreferences): string
   const storeNames = plan.stores.map((store) => store.name).join(", ");
   const explanations = [
     `Built a ${preferences.optimizationGoal.replace("_", " ")} cart across ${plan.stores.length} store${plan.stores.length === 1 ? "" : "s"}: ${storeNames}.`,
-    `Estimated ${preferences.fulfillmentMode} total is $${plan.total.toFixed(2)} including $${plan.fees.toFixed(2)} in current mock fees.`,
+    plan.stores.every((store) => store.feesKnown !== false)
+      ? `Estimated ${preferences.fulfillmentMode} total is $${plan.total.toFixed(2)} including $${plan.fees.toFixed(2)} in current fees.`
+      : `Current grocery subtotal is $${plan.subtotal.toFixed(2)}; Kroger confirms fulfillment fees and the final total at checkout.`,
   ];
 
   if (preferences.optimizationGoal === "fewest_stores") {
@@ -742,10 +764,8 @@ function buildUnmatchedNeed(
   need: GroceryNeed,
   preferences: UserPreferences,
   allCandidates: ProductCandidate[],
+  catalogSource: "mock" | "retailer",
 ): UnmatchedNeed {
-  const matchingProducts = findMatchingProducts(need);
-  const matchingProductIds = new Set(matchingProducts.map((product) => product.id));
-  const matchingOffers = offers.filter((offer) => matchingProductIds.has(offer.productId));
   const blockingConstraints = getBlockingConstraints(need, preferences);
 
   if (allCandidates.length > 0) {
@@ -756,6 +776,26 @@ function buildUnmatchedNeed(
       suggestedActions: ["search_manually", "remove_item"],
     };
   }
+
+  if (catalogSource === "retailer") {
+    return blockingConstraints.length > 0
+      ? {
+          need,
+          reason: "constraint_conflict",
+          blockingConstraints,
+          suggestedActions: ["relax_constraint", "search_manually", "remove_item"],
+        }
+      : {
+          need,
+          reason: "no_candidate",
+          blockingConstraints: [],
+          suggestedActions: ["search_manually", "remove_item"],
+        };
+  }
+
+  const matchingProducts = findMatchingProducts(need);
+  const matchingProductIds = new Set(matchingProducts.map((product) => product.id));
+  const matchingOffers = offers.filter((offer) => matchingProductIds.has(offer.productId));
 
   if (matchingOffers.length > 0 && matchingOffers.every((offer) => !offer.available)) {
     return {

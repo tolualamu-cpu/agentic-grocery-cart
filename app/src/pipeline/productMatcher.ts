@@ -251,7 +251,9 @@ function candidateSort(
   }
 
   if (preferences.optimizationGoal === "fewest_stores") {
-    return a.store.distanceMiles - b.store.distanceMiles || a.offer.price - b.offer.price;
+    return (a.store.distanceMiles ?? Number.MAX_SAFE_INTEGER) -
+        (b.store.distanceMiles ?? Number.MAX_SAFE_INTEGER) ||
+      a.offer.price - b.offer.price;
   }
 
   if (preferences.optimizationGoal === "preferred_brands") {
