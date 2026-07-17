@@ -38,7 +38,9 @@ describe("buildOptimizedCart", () => {
     expect(cart.total).toBeGreaterThan(0);
     expect(cart.stores.length).toBeGreaterThan(0);
     expect(cart.explanations[0]).toContain("cheapest");
-    expect(cart.activePlanId).toBe("recommended");
+    expect(cart.activePlanId).toBe(cart.planOptions[0].id);
+    expect(cart.activePlanId).not.toBe("recommended");
+    expect(cart.planOptions[0].isRecommended).toBe(true);
     expect(cart.planOptions.length).toBeGreaterThan(1);
     expect(cart.status).toBe("ready");
     expect(cart.unmatchedNeeds).toEqual([]);
@@ -57,7 +59,6 @@ describe("buildOptimizedCart", () => {
 
     expect(cart.planOptions.map((plan) => plan.id)).toEqual(
       expect.arrayContaining([
-        "recommended",
         "cheapest-one-store",
         "cheapest-split",
         "fewest-stores",
@@ -65,6 +66,10 @@ describe("buildOptimizedCart", () => {
         "preferred-brands",
       ]),
     );
+    expect(cart.planOptions.map((plan) => plan.id)).not.toContain("recommended");
+    expect(cart.planOptions.filter((plan) => plan.isRecommended)).toHaveLength(1);
+    expect(cart.planOptions[0].isRecommended).toBe(true);
+    expect(cart.activePlanId).toBe(cart.planOptions[0].id);
     expect(cart.planOptions.every((plan) => plan.tradeoffs.length > 0)).toBe(true);
     expect(cart.planOptions.every((plan) => plan.comparisonSummary.length > 0)).toBe(true);
     expect(cart.planOptions.map((plan) => plan.comparisonSummary)).toContain("Lowest cost option");
@@ -86,7 +91,7 @@ describe("buildOptimizedCart", () => {
       organicPreference: "prefer",
       maxStores: 3,
     });
-    const recommendedPlan = cart.planOptions.find((plan) => plan.id === "recommended");
+    const recommendedPlan = cart.planOptions.find((plan) => plan.isRecommended);
     const bestValuePlan = cart.planOptions.find((plan) => plan.id === "best-value");
 
     expect(recommendedPlan?.items[0].selected.offer.organic).not.toBe(true);

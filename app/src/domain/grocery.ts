@@ -37,11 +37,18 @@ export type GroceryInferenceResult = {
 export type Store = {
   id: string;
   name: string;
-  distanceMiles: number;
+  distanceMiles?: number;
   fulfillment: FulfillmentMode[];
   pickupFee: number;
   deliveryFee: number;
   minimumOrder: number;
+  feesKnown?: boolean;
+  retailer?: {
+    connectorId: string;
+    locationId: string;
+    chain: string;
+    address?: string;
+  };
 };
 
 export type ProductImage = {
@@ -76,6 +83,30 @@ export type Offer = {
   storeBrand?: boolean;
   dietaryTags?: string[];
   image?: ProductImage;
+  retailer?: {
+    connectorId: string;
+    productId: string;
+    itemId: string;
+    upc: string;
+    locationId: string;
+    productUrl: string;
+    fetchedAt: string;
+    inventoryLevel?: string;
+    fulfillment: {
+      pickup: boolean;
+      delivery: boolean;
+    };
+    dimensions?: {
+      height?: string;
+      width?: string;
+      depth?: string;
+    };
+    countryOrigin?: string;
+    temperature?: {
+      indicator?: string;
+      heatSensitive?: boolean;
+    };
+  };
 };
 
 export type ProductCandidate = {

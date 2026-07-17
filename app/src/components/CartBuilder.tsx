@@ -35,6 +35,9 @@ const defaultPreferences: UserPreferences = {
   budgetTarget: 55,
 };
 
+const retiredUserOptimizationGoals = new Set<OptimizationGoal>(["fewest_stores", "preferred_brands"]);
+const hiddenCartPlanOptionIds = new Set(["fewest-stores", "preferred-brands"]);
+
 const emptyScoreBreakdown: OptimizedCart["scoreBreakdown"] = {
   costFit: 0,
   storeFit: 0,
@@ -76,6 +79,8 @@ type AddItemSuggestion = {
   storeCount: number;
 };
 
+type PreferenceSelectOption = [string, string, { disabled?: boolean }?];
+
 type PersistentBuilderState = {
   mode?: BuilderMode;
   drafts?: Record<BuilderMode, string>;
@@ -113,7 +118,7 @@ export function CartBuilder() {
       if (savedState) {
         setMode(savedState.mode ?? "meal");
         setDrafts((current) => ({ ...current, ...savedState.drafts }));
-        setPreferences((current) => ({ ...current, ...savedState.preferences }));
+        setPreferences((current) => normalizeUserPreferences({ ...current, ...savedState.preferences }));
         setResults(savedState.results ?? {});
       }
 
@@ -174,13 +179,13 @@ export function CartBuilder() {
       return;
     }
 
+    const exportPlanTitle = getVisibleCartPlanOptions(result.cart.planOptions).find(
+      (plan) => plan.id === result.cart.activePlanId,
+    )?.title;
     const lines = [
       `Cart builder export`,
       `Input: ${result.submittedInput}`,
-      `Plan: ${
-        getPlanDisplayTitle(result.cart.planOptions.find((plan) => plan.id === result.cart.activePlanId)?.title) ??
-        "Custom cart"
-      }`,
+      `Plan: ${getPlanDisplayTitle(exportPlanTitle) ?? "Custom cart"}`,
       `Total: $${result.cart.total.toFixed(2)}`,
       "",
       ...result.cart.items.map(
@@ -208,7 +213,7 @@ export function CartBuilder() {
   }
 
   function updatePreferences(getNextPreferences: (current: UserPreferences) => UserPreferences) {
-    const nextPreferences = getNextPreferences(preferences);
+    const nextPreferences = normalizeUserPreferences(getNextPreferences(preferences));
 
     setPreferences(nextPreferences);
     setResults((currentResults) =>
@@ -478,7 +483,8 @@ export function CartBuilder() {
       return;
     }
 
-    const planOptions = result.cart.planOptions ?? [];
+    const allPlanOptions = result.cart.planOptions ?? [];
+    const planOptions = getVisibleCartPlanOptions(allPlanOptions);
     const plan = planOptions.find((option) => option.id === planId);
 
     if (!plan) {
@@ -492,7 +498,7 @@ export function CartBuilder() {
         ...current,
         [mode]: {
           ...result,
-          cart: cartFromPlanOption(plan, planOptions),
+          cart: cartFromPlanOption(plan, allPlanOptions),
         },
       }));
       setPlanSwitch({ targetPlanId: planId, phase: "in" });
@@ -522,7 +528,7 @@ export function CartBuilder() {
           onPromptChange={updateInput}
         />
 
-        <section className="grid content-start gap-3">
+        <section className="grid min-w-0 content-start gap-3">
           {isBuilding ? (
             <CartBuildLoadingCanvas />
           ) : !result ? (
@@ -590,9 +596,13 @@ function CartPlanComparison({
   isSwitching: boolean;
   onSelect: (planId: string) => void;
 }) {
-  const planOptions = cart.planOptions ?? [];
-  const visibleActivePlanId = activePlanIdOverride ?? cart.activePlanId;
-  const activePlan = planOptions.find((plan) => plan.id === visibleActivePlanId) ?? planOptions[0];
+  const planOptions = getVisibleCartPlanOptions(cart.planOptions ?? []);
+  const requestedActivePlanId = activePlanIdOverride ?? cart.activePlanId;
+  const activePlan =
+    planOptions.find((plan) => plan.id === requestedActivePlanId) ??
+    planOptions.find((plan) => plan.isRecommended) ??
+    planOptions[0];
+  const visibleActivePlanId = activePlan?.id;
 
   if (planOptions.length <= 1) {
     return null;
@@ -608,7 +618,7 @@ function CartPlanComparison({
       <div className="mt-4 grid gap-3">
         {planOptions.map((plan) => {
           const isActive = plan.id === visibleActivePlanId;
-          const planTitle = getPlanDisplayTitle(plan.title);
+          const planTitle = getPlanVisibleTitle(plan);
           const storeLabel = formatPlanStores(plan.stores);
           const comparisonSummary = formatOptionComparisonSummary(plan.comparisonSummary);
 
@@ -622,14 +632,11 @@ function CartPlanComparison({
               data-testid={`cart-plan-${plan.id}`}
               key={plan.id}
             >
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-base font-semibold text-[#241b18]">{planTitle}</h3>
-                  <Badge tone={getComparisonSummaryTone(comparisonSummary)}>{comparisonSummary}</Badge>
-                </div>
-                {plan.isRecommended ? <span className="text-sm font-semibold text-[#d49a00]">*</span> : null}
+              <div>
+                <h3 className="whitespace-nowrap text-sm font-semibold leading-5 text-[#241b18]">{planTitle}</h3>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
+                <Badge tone={getComparisonSummaryTone(comparisonSummary)}>{comparisonSummary}</Badge>
                 <Badge tone="blue">{storeLabel}</Badge>
                 {plan.status !== "ready" ? (
                   <Badge tone="warning">{plan.status === "blocked" ? "Blocked" : "Review"}</Badge>
@@ -667,7 +674,7 @@ function CartPlanComparison({
                 onClick={() => onSelect(plan.id)}
                 type="button"
               >
-                {isActive ? "Selected" : `Use ${planTitle}`}
+                {isActive ? "Selected" : "Select"}
               </button>
             </article>
           );
@@ -680,7 +687,7 @@ function CartPlanComparison({
         >
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-sm font-semibold text-[#241b18]">Selected option</h3>
-            <span className="text-sm font-semibold text-[#7a1f2b]">{getPlanDisplayTitle(activePlan.title)}</span>
+            <span className="text-sm font-semibold text-[#7a1f2b]">{getPlanVisibleTitle(activePlan)}</span>
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <div>
@@ -955,8 +962,7 @@ function ShoppingBriefPanel({
             options={[
               ["cheapest", "Cheapest"],
               ["best_value", "Best value"],
-              ["fewest_stores", "Fewest stores"],
-              ["preferred_brands", "Preferred brands"],
+              ["fewest_stores", "Fewest stores", { disabled: true }],
             ]}
             onChange={(value) =>
               onPreferenceChange((current) => ({ ...current, optimizationGoal: value as OptimizationGoal }))
@@ -1060,7 +1066,7 @@ function PreferenceSelect({
   icon: PreferenceIconName;
   label: string;
   value: string;
-  options: Array<[string, string]>;
+  options: PreferenceSelectOption[];
   onChange: (value: string) => void;
 }) {
   const id = `preference-${label.toLowerCase().replace(/\s+/g, "-")}`;
@@ -1077,8 +1083,8 @@ function PreferenceSelect({
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
-        {options.map(([optionValue, optionLabel]) => (
-          <option key={optionValue} value={optionValue}>
+        {options.map(([optionValue, optionLabel, optionConfig]) => (
+          <option disabled={optionConfig?.disabled} key={optionValue} value={optionValue}>
             {optionLabel}
           </option>
         ))}
@@ -1582,8 +1588,12 @@ function ActiveCartPanel({
     blockingConstraints: [],
     suggestedActions: ["search_manually" as const, "remove_item" as const],
   }));
+  const activePlan = getVisibleCartPlanOptions(cart?.planOptions ?? []).find(
+    (plan) => plan.id === cart?.activePlanId,
+  );
   const activePlanTitle =
-    getPlanDisplayTitle(cart?.planOptions.find((plan) => plan.id === cart.activePlanId)?.title) ?? "Recommended";
+    getPlanVisibleTitle(activePlan) ??
+    (cart?.activePlanId === "custom-edited" ? "Custom cart" : "Selected cart");
   const itemCount = cart?.items.length ?? 0;
   const budgetTarget = preferences.budgetTarget;
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -1669,7 +1679,7 @@ function ActiveCartPanel({
 
   return (
     <section
-      className="cart-option-switch-shell rounded border border-[#dfccb1] bg-[#fffaf2] p-3 shadow-[0_10px_34px_rgba(63,49,44,0.08)]"
+      className="cart-option-switch-shell min-w-0 rounded border border-[#dfccb1] bg-[#fffaf2] p-3 shadow-[0_10px_34px_rgba(63,49,44,0.08)]"
       aria-label="Active cart"
       data-testid="active-cart-transition-shell"
       data-switch-phase={planSwitchPhase ?? "idle"}
@@ -1680,12 +1690,12 @@ function ActiveCartPanel({
         transition: "opacity 1000ms ease-in-out",
       }}
     >
-      <div className="flex items-start justify-between gap-4 border-b border-[#eadfce] pb-2">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#eadfce] pb-2">
         <div className="min-w-0 flex-1">
-          <h2 className={`${compactSectionHeadingClass} flex flex-wrap items-baseline gap-1.5`} data-testid="active-cart-title">
+          <h2 className={`${compactSectionHeadingClass} flex items-baseline gap-1.5 whitespace-nowrap`} data-testid="active-cart-title">
             <span>Active Cart</span>
             {cart ? (
-              <span className="text-sm font-semibold leading-5 text-[#7a1f2b]" data-testid="active-cart-plan-title">
+              <span className="whitespace-nowrap text-xs font-semibold leading-5 text-[#7a1f2b]" data-testid="active-cart-plan-title">
                 {toTitleCase(activePlanTitle)}
               </span>
             ) : null}
@@ -2119,6 +2129,21 @@ function getAddItemSuggestionOptionId(productId: string): string {
   return `add-item-option-${productId}`;
 }
 
+function normalizeUserPreferences(preferences: UserPreferences): UserPreferences {
+  if (!retiredUserOptimizationGoals.has(preferences.optimizationGoal)) {
+    return preferences;
+  }
+
+  return {
+    ...preferences,
+    optimizationGoal: "cheapest",
+  };
+}
+
+function getVisibleCartPlanOptions(planOptions: CartPlanOption[] = []): CartPlanOption[] {
+  return planOptions.filter((plan) => !hiddenCartPlanOptionIds.has(plan.id));
+}
+
 const segmentClass =
   "min-h-10 rounded px-3 text-base font-semibold text-[#6f6256] transition hover:bg-[#fffdf8]/80";
 const activeSegmentClass =
@@ -2201,12 +2226,14 @@ function readSavedBuilderState(): PersistentBuilderState | null {
     }
 
     const parsedState = JSON.parse(savedState) as PersistentBuilderState;
-    const savedPreferences = { ...defaultPreferences, ...parsedState.preferences };
+    const rawSavedPreferences = { ...defaultPreferences, ...parsedState.preferences };
+    const savedPreferences = normalizeUserPreferences(rawSavedPreferences);
+    const shouldRebuildSavedResults = rawSavedPreferences.optimizationGoal !== savedPreferences.optimizationGoal;
     const savedResults = parsedState.results
       ? (Object.fromEntries(
           Object.entries(parsedState.results).map(([resultMode, savedResult]) => [
             resultMode,
-            savedResult && isRenderableSavedCart(savedResult.cart)
+            savedResult && !shouldRebuildSavedResults && isRenderableSavedCart(savedResult.cart)
               ? savedResult
               : savedResult
                 ? {
@@ -2236,6 +2263,16 @@ function isRenderableSavedCart(cart?: Partial<OptimizedCart>): cart is Optimized
   }
 
   const planOptions = Array.isArray(cart.planOptions) ? cart.planOptions : [];
+
+  if (
+    cart.activePlanId === "recommended" ||
+    hiddenCartPlanOptionIds.has(cart.activePlanId ?? "") ||
+    planOptions.some(
+      (plan) => plan.id === "recommended" || (hiddenCartPlanOptionIds.has(plan.id) && plan.isRecommended),
+    )
+  ) {
+    return false;
+  }
 
   return (
     Array.isArray(cart.items) &&
@@ -2318,6 +2355,16 @@ function getPlanDisplayTitle(title?: string): string | undefined {
   }
 
   return title;
+}
+
+function getPlanVisibleTitle(plan?: Pick<CartPlanOption, "title" | "isRecommended">): string | undefined {
+  const displayTitle = getPlanDisplayTitle(plan?.title);
+
+  if (!displayTitle) {
+    return undefined;
+  }
+
+  return plan?.isRecommended ? `${displayTitle} (Recommended)` : displayTitle;
 }
 
 function formatPlanStores(stores: OptimizedCart["stores"]): string {

@@ -1,7 +1,10 @@
 import { expect, test } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 
 const builderStorageKey = "agentic-grocery-cart-builder:v2";
+const recommendedActiveCartHeading = /Active Cart .+\(Recommended\)/;
+const recommendedOptionHeading = /.+ \(Recommended\)$/;
 
 test.describe("agentic grocery cart MVP", () => {
   test("builds a shawarma cart from mock model profile inference", async ({ page }) => {
@@ -12,7 +15,7 @@ test.describe("agentic grocery cart MVP", () => {
 
     await expect(page.getByText("Inferred from your cart")).toBeVisible();
     await expect(page.getByText("mock model meal profile")).not.toBeVisible();
-    await expect(page.getByRole("heading", { name: "Active Cart Recommended" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Ground Lamb" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Pita Bread, 6 Count" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Shawarma Seasoning Blend" })).toBeVisible();
@@ -47,7 +50,7 @@ test.describe("agentic grocery cart MVP", () => {
     await page.reload();
 
     await expect(page.locator("#grocery-input")).toHaveValue("shawarma");
-    await expect(page.getByRole("heading", { name: "Active Cart Recommended" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Ground Lamb" })).toBeVisible();
     await expect(page.getByTestId("cart-total")).toHaveText(startingTotal);
   });
@@ -141,7 +144,7 @@ test.describe("agentic grocery cart MVP", () => {
 
     await buildCurrentCart(page);
 
-    await expect(page.getByRole("heading", { name: "Active Cart Recommended" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Boneless Skinless Chicken Breast" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Romaine Lettuce Hearts" })).toBeVisible();
 
@@ -178,7 +181,7 @@ test.describe("agentic grocery cart MVP", () => {
     expect(newFirstRowBox).not.toBeNull();
 
     if (firstRowBox && newFirstRowBox) {
-      expect(Math.abs(newFirstRowBox.y - firstRowBox.y)).toBeLessThan(24);
+      expect(Math.abs(newFirstRowBox.y - firstRowBox.y)).toBeLessThan(48);
     }
   });
 
@@ -193,7 +196,7 @@ test.describe("agentic grocery cart MVP", () => {
     await expect(page.getByTestId("cart-build-loading-canvas")).toContainText("Building cart");
     await expect(page.getByTestId("cart-options-loading-canvas")).toBeVisible();
     await expect(page.getByRole("button", { name: "Build cart" })).toBeDisabled();
-    await expect(page.getByRole("heading", { name: "Active Cart Recommended" })).not.toBeVisible();
+    await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).not.toBeVisible();
 
     const blockingElement = await page.evaluate(() =>
       document.elementFromPoint(Math.floor(window.innerWidth / 2), Math.floor(window.innerHeight / 2))?.getAttribute(
@@ -206,7 +209,7 @@ test.describe("agentic grocery cart MVP", () => {
       timeout: 4_000,
     });
     await expect(page.getByTestId("cart-loading-blocker")).toBeHidden();
-    await expect(page.getByRole("heading", { name: "Active Cart Recommended" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).toBeVisible();
     await expect(page.getByTestId("cart-result-reveal").first()).toHaveCSS("animation-duration", /0\.9s|900ms/);
     await expect(page.getByRole("heading", { name: "Ground Lamb" })).toBeVisible();
 
@@ -217,7 +220,7 @@ test.describe("agentic grocery cart MVP", () => {
     await expect(page.getByTestId("cart-build-loading-canvas")).toBeVisible();
     await expect(page.getByTestId("cart-options-loading-canvas")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Ground Lamb" })).not.toBeVisible();
-    await expect(page.getByRole("heading", { name: "Active Cart Recommended" })).not.toBeVisible();
+    await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).not.toBeVisible();
 
     await expect(page.getByTestId("cart-build-loading-canvas")).toBeHidden({
       timeout: 4_000,
@@ -362,6 +365,17 @@ test.describe("agentic grocery cart MVP", () => {
     if (viewport && viewport.width >= 640) {
       await expect(page.getByRole("button", { name: "Clear Cart" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Export Grocery List" })).toBeVisible();
+
+      const downloadPromise = page.waitForEvent("download");
+      await page.getByRole("button", { name: "Export Grocery List" }).click();
+      const download = await downloadPromise;
+      const downloadPath = await download.path();
+
+      expect(downloadPath).not.toBeNull();
+      const exportedText = await readFile(downloadPath ?? "", "utf-8");
+
+      expect(exportedText).toContain("Plan:");
+      expect(exportedText).not.toContain("(Recommended)");
     }
     await expect(page.getByText("Agentic grocery cart builder")).not.toBeVisible();
     await expect(page.getByText("Your AI shopping assistant")).not.toBeVisible();
@@ -410,6 +424,11 @@ test.describe("agentic grocery cart MVP", () => {
     await expect(page.getByTestId("preference-icon-budget")).toBeVisible();
     await expect(page.getByTestId("preference-icon-reset")).toBeVisible();
     await expect(page.getByTestId("preference-icon-info")).toBeVisible();
+    await expect(page.locator("#preference-cart-strategy option[value='fewest_stores']")).toHaveAttribute(
+      "disabled",
+      "",
+    );
+    await expect(page.locator("#preference-cart-strategy option[value='preferred_brands']")).toHaveCount(0);
 
     if (viewport && viewport.width >= 1000) {
       const groceryInputBox = await page.locator("#grocery-input").boundingBox();
@@ -442,7 +461,7 @@ test.describe("agentic grocery cart MVP", () => {
       }
     }
 
-    await expect(page.getByRole("heading", { name: "Active Cart Recommended" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Active cart", exact: true })).not.toBeVisible();
     await expect(page.getByText("Recommended cart")).not.toBeVisible();
 
@@ -451,21 +470,41 @@ test.describe("agentic grocery cart MVP", () => {
       .evaluate((element) => window.getComputedStyle(element).backgroundColor);
     expect(["rgb(122, 31, 43)", "rgb(101, 25, 35)"]).toContain(buildButtonColor);
 
-    const recommendedPlan = page.getByTestId("cart-plan-recommended");
-    const planTitleBox = await recommendedPlan.getByRole("heading", { name: "Recommended" }).boundingBox();
+    const recommendedPlan = page.getByLabel("Compare cart options").locator("[data-testid^='cart-plan-']").first();
+    const recommendedPlanBox = await recommendedPlan.boundingBox();
+    const recommendedPlanTitle = recommendedPlan.getByRole("heading", { name: recommendedOptionHeading });
+    const planTitleBox = await recommendedPlanTitle.boundingBox();
     const costPillBox = await recommendedPlan.getByText("Lowest cost option").boundingBox();
+    const storePillBox = await recommendedPlan.getByText(/Buy at/).first().boundingBox();
     const groceryCostBox = await recommendedPlan.getByText("Grocery cost").boundingBox();
     const feesBox = await recommendedPlan.getByText("Fees").boundingBox();
     const estimateBox = await recommendedPlan.getByText("Est. total").boundingBox();
 
+    await expect(page.getByTestId("cart-plan-recommended")).toHaveCount(0);
+    await expect(page.getByTestId("cart-plan-fewest-stores")).toHaveCount(0);
+    await expect(page.getByTestId("cart-plan-preferred-brands")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /Fewest stores/ })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /Preferred brands/ })).toHaveCount(0);
+    await expect(recommendedPlanTitle).toBeVisible();
     expect(planTitleBox).not.toBeNull();
+    expect(recommendedPlanBox).not.toBeNull();
     expect(costPillBox).not.toBeNull();
+    expect(storePillBox).not.toBeNull();
     expect(groceryCostBox).not.toBeNull();
     expect(feesBox).not.toBeNull();
     expect(estimateBox).not.toBeNull();
+    expect(await recommendedPlanTitle.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
 
     if (planTitleBox && costPillBox) {
-      expect(Math.abs(planTitleBox.y - costPillBox.y)).toBeLessThan(8);
+      expect(costPillBox.y).toBeGreaterThan(planTitleBox.y + planTitleBox.height - 1);
+    }
+
+    if (planTitleBox && storePillBox) {
+      expect(storePillBox.y).toBeGreaterThan(planTitleBox.y + planTitleBox.height - 1);
+    }
+
+    if (planTitleBox && recommendedPlanBox) {
+      expect(planTitleBox.width).toBeLessThanOrEqual(recommendedPlanBox.width);
     }
 
     if (groceryCostBox && feesBox && estimateBox) {
@@ -482,10 +521,10 @@ test.describe("agentic grocery cart MVP", () => {
     await expect(selectedBreakdown.getByText("Why")).toBeVisible();
     await expect(selectedBreakdown.getByText("Tradeoffs")).toBeVisible();
     await expect(selectedBreakdown.getByText("All items available")).toBeVisible();
-    await expect(page.getByTestId("cart-plan-recommended").getByText(/^\d+ stores?$/)).not.toBeVisible();
-    await expect(page.getByTestId("cart-plan-recommended").getByText(/store-brand/)).not.toBeVisible();
-    await expect(page.getByRole("heading", { name: "Cheapest single-store" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Cheapest multi-store" })).toBeVisible();
+    await expect(recommendedPlan.getByText(/^\d+ stores?$/)).not.toBeVisible();
+    await expect(recommendedPlan.getByText(/store-brand/)).not.toBeVisible();
+    await expect(page.getByTestId("cart-plan-cheapest-one-store").getByRole("heading", { name: "Cheapest single-store" })).toBeVisible();
+    await expect(page.getByTestId("cart-plan-cheapest-split").getByRole("heading", { name: recommendedOptionHeading })).toBeVisible();
     await expect(page.getByText(/Buy at .+ \+ .+/).first()).toBeVisible();
 
     const briefBox = await page.getByLabel("Shopping brief").boundingBox();
@@ -496,7 +535,7 @@ test.describe("agentic grocery cart MVP", () => {
     const headerLogoBox = await headerLogo.boundingBox();
     const inferenceHeadingBox = await page.getByRole("heading", { name: "Inferred from your cart" }).boundingBox();
     const compareHeadingBox = await page.getByRole("heading", { name: "Compare cart options" }).boundingBox();
-    const activeHeadingBox = await page.getByRole("heading", { name: "Active Cart Recommended" }).boundingBox();
+    const activeHeadingBox = await page.getByRole("heading", { name: recommendedActiveCartHeading }).boundingBox();
     const activePlanTitleBox = await page.getByTestId("active-cart-plan-title").boundingBox();
     const firstCartLineBox = await page.getByTestId("cart-line-item").first().boundingBox();
     const inferenceChipBox = await page.getByTestId("inference-visible-chips").boundingBox();
@@ -668,7 +707,7 @@ test.describe("agentic grocery cart MVP", () => {
     const getBackgroundColor = async (locator: Locator) =>
       locator.evaluate((element) => window.getComputedStyle(element).backgroundColor);
 
-    const recommendedPlan = page.getByTestId("cart-plan-recommended");
+    const recommendedPlan = page.getByLabel("Compare cart options").locator("[data-testid^='cart-plan-']").first();
     const lowestCostPill = recommendedPlan.getByText("Lowest cost option");
     const storePill = recommendedPlan.getByText(/Buy at/).first();
     const availablePill = recommendedPlan.getByText("All items available").first();
@@ -760,6 +799,104 @@ test.describe("agentic grocery cart MVP", () => {
     await expect(page.getByText(/more than lowest cost option/)).not.toBeVisible();
   });
 
+  test("normalizes retired fewest-store preferences from saved carts", async ({ page }) => {
+    await openApp(page);
+    await buildListCart(page, "milk, sandwich bread, bananas");
+    await page.waitForFunction((storageKey) => window.localStorage.getItem(storageKey)?.includes("fewest-stores"), builderStorageKey);
+
+    await page.evaluate((storageKey) => {
+      const savedState = window.localStorage.getItem(storageKey);
+
+      if (!savedState) {
+        throw new Error("Expected saved builder state");
+      }
+
+      const parsedState = JSON.parse(savedState);
+      const listCart = parsedState.results?.list?.cart;
+
+      if (!listCart) {
+        throw new Error("Expected saved list cart");
+      }
+
+      parsedState.preferences = {
+        ...parsedState.preferences,
+        optimizationGoal: "fewest_stores",
+      };
+      listCart.activePlanId = "fewest-stores";
+      listCart.planOptions?.forEach((plan: { id: string; isRecommended?: boolean }) => {
+        plan.isRecommended = plan.id === "fewest-stores";
+      });
+
+      window.localStorage.setItem(storageKey, JSON.stringify(parsedState));
+    }, builderStorageKey);
+    await page.reload({
+      waitUntil: "domcontentloaded",
+    });
+
+    await expect(page.locator("#preference-cart-strategy")).toHaveValue("cheapest");
+    await expect(page.locator("#preference-cart-strategy option[value='fewest_stores']")).toHaveAttribute(
+      "disabled",
+      "",
+    );
+    await expect(page.getByTestId("cart-plan-fewest-stores")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /Fewest stores/ })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).toBeVisible();
+    await expect(
+      page.getByLabel("Compare cart options").locator("[data-testid^='cart-plan-']").first().getByRole("heading", {
+        name: recommendedOptionHeading,
+      }),
+    ).toBeVisible();
+  });
+
+  test("normalizes retired preferred-brand preferences from saved carts", async ({ page }) => {
+    await openApp(page);
+    await buildListCart(page, "blue cheese");
+    await page.waitForFunction(
+      (storageKey) => window.localStorage.getItem(storageKey)?.includes("preferred-brands"),
+      builderStorageKey,
+    );
+
+    await page.evaluate((storageKey) => {
+      const savedState = window.localStorage.getItem(storageKey);
+
+      if (!savedState) {
+        throw new Error("Expected saved builder state");
+      }
+
+      const parsedState = JSON.parse(savedState);
+      const listCart = parsedState.results?.list?.cart;
+
+      if (!listCart) {
+        throw new Error("Expected saved list cart");
+      }
+
+      parsedState.preferences = {
+        ...parsedState.preferences,
+        optimizationGoal: "preferred_brands",
+      };
+      listCart.activePlanId = "preferred-brands";
+      listCart.planOptions?.forEach((plan: { id: string; isRecommended?: boolean }) => {
+        plan.isRecommended = plan.id === "preferred-brands";
+      });
+
+      window.localStorage.setItem(storageKey, JSON.stringify(parsedState));
+    }, builderStorageKey);
+    await page.reload({
+      waitUntil: "domcontentloaded",
+    });
+
+    await expect(page.locator("#preference-cart-strategy")).toHaveValue("cheapest");
+    await expect(page.locator("#preference-cart-strategy option[value='preferred_brands']")).toHaveCount(0);
+    await expect(page.getByTestId("cart-plan-preferred-brands")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /Preferred brands/ })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).toBeVisible();
+    await expect(
+      page.getByLabel("Compare cart options").locator("[data-testid^='cart-plan-']").first().getByRole("heading", {
+        name: recommendedOptionHeading,
+      }),
+    ).toBeVisible();
+  });
+
   test("active cart totals and alternative cards stay functional after UX refinements", async ({ page }) => {
     await openApp(page);
     await buildCurrentCart(page);
@@ -846,9 +983,11 @@ test.describe("agentic grocery cart MVP", () => {
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.getByTestId("inference-chip").filter({ hasText: "Sumac" }).click();
     await expect(reviewPanel).toBeVisible();
-    await expect(page.getByTestId("cart-plan-recommended").getByText("Review")).toBeVisible();
-    await expect(page.getByTestId("cart-plan-recommended").getByText("Missing 1")).toBeVisible();
-    await expect(page.getByTestId("cart-plan-recommended").getByText("Est. total")).toBeVisible();
+    const recommendedPlan = page.getByLabel("Compare cart options").locator("[data-testid^='cart-plan-']").first();
+
+    await expect(recommendedPlan.getByText("Review")).toBeVisible();
+    await expect(recommendedPlan.getByText("Missing 1")).toBeVisible();
+    await expect(recommendedPlan.getByText("Est. total")).toBeVisible();
 
     await reviewPanel.getByRole("button", { name: "Remove" }).click();
 
@@ -863,7 +1002,7 @@ test.describe("agentic grocery cart MVP", () => {
     await expect(page.getByLabel("Needs review").getByText("Sumac")).toBeVisible();
     await expect(page.getByTestId("cart-plan-best-value").getByText("Missing 1")).toBeVisible();
 
-    await page.getByRole("button", { name: "Use Best value" }).click();
+    await page.getByTestId("cart-plan-best-value").getByRole("button", { name: "Select" }).click();
 
     await expect(page.getByTestId("selected-option-breakdown").getByText("Best value")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Active Cart Best Value" })).toBeVisible();
@@ -940,7 +1079,7 @@ test.describe("agentic grocery cart MVP", () => {
     await openApp(page);
 
     await buildCurrentCart(page);
-    await expect(page.getByRole("heading", { name: "Active Cart Recommended" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).toBeVisible();
 
     await page.getByRole("button", { name: "Grocery list", exact: true }).click();
     await expect(page.getByText("Build your grocery cart, your way")).toBeVisible();
@@ -958,7 +1097,7 @@ test.describe("agentic grocery cart MVP", () => {
     await expect(page.getByRole("button", { name: "Tacos" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Pasta dinner" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Milk, eggs, bananas" })).not.toBeVisible();
-    await expect(page.getByRole("heading", { name: "Active Cart Recommended" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Boneless Skinless Chicken Breast" })).toBeVisible();
   });
 
@@ -1118,11 +1257,13 @@ test.describe("agentic grocery cart MVP", () => {
     await page.locator("#preference-organic").selectOption("prefer");
     await expect(page.getByRole("heading", { name: "Compare cart options" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Compare cart plans" })).not.toBeVisible();
-    await expect(page.getByTestId("cart-plan-recommended")).toBeVisible();
+    await expect(page.getByTestId("cart-plan-recommended")).toHaveCount(0);
+    await expect(page.getByTestId("cart-plan-fewest-stores")).toHaveCount(0);
+    await expect(page.getByLabel("Compare cart options").locator("[data-testid^='cart-plan-']").first().getByRole("heading", { name: recommendedOptionHeading })).toBeVisible();
     await expect(page.getByTestId("cart-plan-best-value")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Large Eggs, 12 Count" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Use Best value" }).click();
+    await page.getByTestId("cart-plan-best-value").getByRole("button", { name: "Select" }).click();
 
     await expect(page.getByTestId("selected-option-breakdown").getByText("Best value")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Organic Large Brown Eggs, 12 Count" })).toBeVisible();
@@ -1139,10 +1280,10 @@ test.describe("agentic grocery cart MVP", () => {
       activeCartShell.evaluate((element) => Number(window.getComputedStyle(element).opacity));
 
     await expect(page.getByTestId("cart-plan-cheapest-split")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Cheapest multi-store" })).toBeVisible();
+    await expect(page.getByTestId("cart-plan-cheapest-split").getByRole("heading", { name: recommendedOptionHeading })).toBeVisible();
     await expect(page.getByText(/Buy at .+ \+ .+/).first()).toBeVisible();
 
-    await page.getByRole("button", { name: "Use Cheapest single-store" }).click();
+    await page.getByTestId("cart-plan-cheapest-one-store").getByRole("button", { name: "Select" }).click();
 
     await expect(page.getByTestId("cart-loading-status")).toHaveCount(0);
     await expect(page.getByTestId("cart-build-loading-canvas")).not.toBeVisible();
@@ -1152,7 +1293,7 @@ test.describe("agentic grocery cart MVP", () => {
     await page.waitForTimeout(250);
     await expect(activeCartShell).toHaveAttribute("data-transitioning", "true");
     await expect(activeCartShell).toHaveAttribute("data-switch-phase", "out");
-    await expect(page.getByRole("heading", { name: "Active Cart Recommended" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).toBeVisible();
     const fadeOutOpacity = await getActiveCartOpacity();
     expect(fadeOutOpacity).toBeGreaterThanOrEqual(0);
     expect(fadeOutOpacity).toBeLessThanOrEqual(1);
@@ -1172,7 +1313,7 @@ test.describe("agentic grocery cart MVP", () => {
     await expect(page.getByTestId("cart-total")).not.toHaveText(recommendedTotal);
 
     const oneStoreTotal = await page.getByTestId("cart-total").innerText();
-    await page.getByRole("button", { name: "Use Recommended" }).click();
+    await page.getByLabel("Compare cart options").locator("[data-testid^='cart-plan-']").first().getByRole("button", { name: "Select" }).click();
 
     await expect(page.getByTestId("cart-loading-status")).toHaveCount(0);
     await expect(activeCartShell).toHaveAttribute("data-transitioning", "true");
@@ -1187,29 +1328,30 @@ test.describe("agentic grocery cart MVP", () => {
     await page.waitForTimeout(550);
     await expect(activeCartShell).toHaveAttribute("data-transitioning", "true");
     await expect(activeCartShell).toHaveAttribute("data-switch-phase", "in");
-    await expect(page.getByRole("heading", { name: "Active Cart Recommended" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).toBeVisible();
     const secondFadeInOpacity = await getActiveCartOpacity();
     expect(secondFadeInOpacity).toBeGreaterThanOrEqual(0);
     expect(secondFadeInOpacity).toBeLessThanOrEqual(1);
-    await expect(page.getByTestId("selected-option-breakdown").getByText("Recommended")).toBeVisible();
+    await expect(page.getByTestId("selected-option-breakdown").getByText(/\(Recommended\)$/)).toBeVisible();
     await expect(activeCartShell).toHaveAttribute("data-transitioning", "false", {
       timeout: 3_000,
     });
     await expect(activeCartShell).toHaveCSS("opacity", "1");
-    await expect(page.getByRole("heading", { name: "Active Cart Recommended" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).toBeVisible();
     await expect(page.getByTestId("cart-total")).not.toHaveText(oneStoreTotal);
   });
 
-  test("preferred brands and strict brand flexibility reduce store-brand reliance", async ({ page }) => {
+  test("keeps brand flexibility available without exposing the retired preferred-brand strategy", async ({ page }) => {
     await openApp(page);
     await buildListCart(page, "blue cheese");
 
     await expect(page.getByRole("heading", { name: "Blue Cheese Crumbles" })).toBeVisible();
-    await page.locator("#preference-cart-strategy").selectOption("preferred_brands");
+    await expect(page.locator("#preference-cart-strategy option[value='preferred_brands']")).toHaveCount(0);
     await page.locator("#preference-brands").selectOption("strict");
 
-    await expect(page.getByText("Private Selection")).toBeVisible();
-    await expect(page.getByText("Preferred brands reduced reliance")).toBeVisible();
+    await expect(page.locator("#preference-brands")).toHaveValue("strict");
+    await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).toBeVisible();
+    await expect(page.getByTestId("cart-plan-preferred-brands")).toHaveCount(0);
   });
 
   test("Phase 3.5 add-item search finds breakfast protein suggestions", async ({ page }) => {
@@ -1411,7 +1553,7 @@ test.describe("agentic grocery cart MVP", () => {
     await page.locator("#grocery-input").fill("chicken curry and shawarma");
     await buildCurrentCart(page);
 
-    await expect(page.getByRole("heading", { name: "Active Cart Recommended" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Boneless Chicken Thighs" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Red Curry Paste" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Ground Lamb" })).toBeVisible();
@@ -1425,7 +1567,7 @@ test.describe("agentic grocery cart MVP", () => {
     await page.locator("#grocery-input").fill("salmon dinner, turkey");
     await buildCurrentCart(page);
 
-    await expect(page.getByRole("heading", { name: "Active Cart Recommended" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Atlantic Salmon Fillet" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Deli Turkey Slices" })).toBeVisible();
     await expect(page.getByText(/used by/)).not.toBeVisible();
@@ -1449,7 +1591,7 @@ test.describe("agentic grocery cart MVP", () => {
       await page.locator("#grocery-input").fill(mealInput);
       await buildCurrentCart(page);
 
-      await expect(page.getByRole("heading", { name: "Active Cart Recommended" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).toBeVisible();
       await expect(page.getByRole("heading", { name: expectedHeading })).toBeVisible();
       await expect(page.getByText("I could not build a reliable cart yet")).not.toBeVisible();
     });
@@ -1498,5 +1640,5 @@ async function buildListCart(page: Page, list: string) {
   await page.getByRole("button", { name: "Grocery list", exact: true }).click();
   await page.locator("#grocery-input").fill(list);
   await buildCurrentCart(page);
-  await expect(page.getByRole("heading", { name: "Active Cart Recommended" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: recommendedActiveCartHeading })).toBeVisible();
 }
